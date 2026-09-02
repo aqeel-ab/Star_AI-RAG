@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Secrets - never commit API key
+.env
+
+# Debugging / development scripts
+src/inspect_article.py
+src/inspect_missing_metadata.py
+
+# OS / editor
+.DS_Store
+.vscode/
