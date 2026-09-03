@@ -4,11 +4,12 @@ app.py
 Streamlit chat UI for the Johor Election RAG prototype.
 
 Run with:
-    streamlit run app.py
+    streamlit run app.py / python -m streamlit run app.py
 """
 
 import os
 import sys
+from datetime import datetime
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -72,6 +73,56 @@ st.set_page_config(
 
 
 # ============================================================================
+# SESSION STATE
+# ============================================================================
+
+if "chats" not in st.session_state:
+    st.session_state.chats = {}
+
+if "current_chat_id" not in st.session_state:
+    st.session_state.current_chat_id = None
+
+
+def create_new_chat():
+    """
+    Create a new empty chat session.
+    """
+
+    chat_id = datetime.now().strftime(
+        "%Y%m%d%H%M%S%f"
+    )
+
+    st.session_state.chats[chat_id] = {
+        "title": "New Chat",
+        "history": []
+    }
+
+    st.session_state.current_chat_id = chat_id
+
+
+def get_current_chat():
+    """
+    Return the currently selected chat.
+    """
+
+    chat_id = st.session_state.current_chat_id
+
+    if (
+        chat_id is None
+        or chat_id not in st.session_state.chats
+    ):
+        create_new_chat()
+
+    return st.session_state.chats[
+        st.session_state.current_chat_id
+    ]
+
+
+# Create first chat
+get_current_chat()
+
+
+# ============================================================================
 # SIDEBAR
 # ============================================================================
 
@@ -79,40 +130,87 @@ with st.sidebar:
 
     st.header("🗳️ Johor Election RAG")
 
-    st.markdown(
-        """
-        **Data source**
-
-        The Star Malaysia
-
-        **Coverage**
-
-        Johor state election
-
-        **Retrieval**
-
-        FAISS + dense embeddings
-
-        **Embedding model**
-
-        `all-MiniLM-L6-v2`
-
-        **Generation**
-
-        Gemini
-        """
-    )
-
-    st.divider()
+    # ------------------------------------------------------------
+    # New Chat
+    # ------------------------------------------------------------
 
     if st.button(
-        "🗑️ Clear Chat",
+        "＋ New Chat",
         use_container_width=True
     ):
 
-        st.session_state.history = []
+        create_new_chat()
+        st.rerun()
+
+    st.divider()
+
+    # ------------------------------------------------------------
+    # Chat History
+    # ------------------------------------------------------------
+
+    st.subheader("Chat History")
+
+    chats = st.session_state.chats
+
+    # Show newest chats first
+    chat_items = list(
+        chats.items()
+    )[::-1]
+
+    has_previous_chats = False
+
+    for chat_id, chat in chat_items:
+        # Only show chats that contain messages
+        if not chat["history"]:
+            continue
+
+        has_previous_chats = True
+
+        title = chat["title"]
+
+        if len(title) > 32:
+            title = title[:32] + "..."
+
+        if st.button(
+            f"💬 {title}",
+            key=f"chat_{chat_id}",
+            use_container_width=True
+        ):
+
+            st.session_state.current_chat_id = chat_id
+            st.rerun()
+
+
+    if not has_previous_chats:
+        st.caption(
+            "No previous chats yet."
+        )
+
+    st.divider()
+
+    # ------------------------------------------------------------
+    # Clear All Chats
+    # ------------------------------------------------------------
+
+    if st.button(
+        "🗑️ Clear All Chats",
+        use_container_width=True
+    ):
+
+        st.session_state.chats = {}
+
+        create_new_chat()
 
         st.rerun()
+
+
+# ============================================================================
+# CURRENT CHAT
+# ============================================================================
+
+current_chat = get_current_chat()
+
+history = current_chat["history"]
 
 
 # ============================================================================
@@ -125,8 +223,8 @@ st.title(
 
 st.caption(
     "Ask questions about The Star's coverage of the "
-    "Johor state election. Answers are grounded only "
-    "in the retrieved articles."
+    "Johor state election. Answers are generated from "
+    "retrieved articles and include source citations."
 )
 
 
@@ -137,41 +235,21 @@ st.caption(
 @st.cache_resource
 def load_retriever():
 
-    # ------------------------------------------------------------
-    # Check dataset
-    # ------------------------------------------------------------
-
     if not os.path.exists(DATA_PATH):
 
         raise FileNotFoundError(
             f"Dataset not found: {DATA_PATH}"
         )
 
-    # ------------------------------------------------------------
-    # Load articles
-    # ------------------------------------------------------------
-
     articles = load_articles()
-
-    # ------------------------------------------------------------
-    # Chunk articles
-    # ------------------------------------------------------------
 
     chunks = chunk_articles(
         articles
     )
 
-    # ------------------------------------------------------------
-    # Load embedding model
-    # ------------------------------------------------------------
-
     embedding_model = EmbeddingModel(
         EMBEDDING_MODEL
     )
-
-    # ------------------------------------------------------------
-    # Build FAISS retriever
-    # ------------------------------------------------------------
 
     retriever = Retriever(
         chunks,
@@ -221,34 +299,26 @@ if not (
 
 
 # ============================================================================
-# CHAT HISTORY
-# ============================================================================
-
-if "history" not in st.session_state:
-
-    st.session_state.history = []
-
-
-# ============================================================================
 # WELCOME MESSAGE
 # ============================================================================
 
-if len(st.session_state.history) == 0:
+if len(history) == 0:
 
     st.info(
         "💡 Example questions:\n\n"
-        "- How many candidates did Pakatan announce?\n"
-        "- How many seats did BN win?\n"
-        "- When was polling day?\n"
+        "- How many candidates did Pakatan announce "
+        "for the Johor polls?\n"
+        "- How many seats did BN win in the Johor polls?\n"
+        "- When was polling day for the Johor election?\n"
         "- Who won the Pulai seat?"
     )
 
 
 # ============================================================================
-# DISPLAY PREVIOUS CHAT
+# DISPLAY CHAT HISTORY
 # ============================================================================
 
-for turn in st.session_state.history:
+for turn in history:
 
     with st.chat_message(
         turn["role"]
@@ -259,7 +329,7 @@ for turn in st.session_state.history:
         )
 
         # --------------------------------------------------------
-        # Display sources for assistant messages
+        # Display sources
         # --------------------------------------------------------
 
         if (
@@ -306,10 +376,18 @@ query = st.chat_input(
 if query:
 
     # ------------------------------------------------------------
+    # Update chat title using first question
+    # ------------------------------------------------------------
+
+    if current_chat["title"] == "New Chat":
+
+        current_chat["title"] = query.strip()
+
+    # ------------------------------------------------------------
     # Display user question
     # ------------------------------------------------------------
 
-    st.session_state.history.append(
+    current_chat["history"].append(
         {
             "role": "user",
             "content": query
@@ -386,7 +464,7 @@ if query:
                 # Save assistant response
                 # ------------------------------------------------
 
-                st.session_state.history.append(
+                current_chat["history"].append(
                     {
                         "role": "assistant",
                         "content": response.answer,
@@ -406,14 +484,13 @@ if query:
                     error_message
                 )
 
-                # Keep technical error available during development
                 with st.expander(
                     "Technical details"
                 ):
 
                     st.exception(error)
 
-                st.session_state.history.append(
+                current_chat["history"].append(
                     {
                         "role": "assistant",
                         "content": error_message,

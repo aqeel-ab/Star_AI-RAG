@@ -1,41 +1,5 @@
 """
 rag_pipeline.py
-----------------
-The heart of the RAG system. This file has four building blocks, in the
-order data flows through them:
-
-    1. chunk_articles()      -- split long articles into small overlapping
-                                 pieces ("chunks") small enough to search
-                                 and feed to an LLM, while keeping metadata
-                                 (title, date, author, url) attached to
-                                 every chunk.
-
-    2. Retriever              -- turns chunks into searchable vectors and,
-                                 given a question, returns the most
-                                 relevant chunks.
-
-    3. Guardrail               -- decides whether a question is even about
-                                 the Johor election at all. If not, we
-                                 refuse rather than let the LLM hallucinate
-                                 an answer about something we have no data
-                                 on.
-
-    4. Generator                -- takes the retrieved chunks + the
-                                 question and writes a grounded answer
-                                 with citations. Uses the Claude API if an
-                                 ANTHROPIC_API_KEY is set; otherwise falls
-                                 back to a simple extractive summary so the
-                                 whole pipeline still runs for demo/testing
-                                 purposes without any API key.
-
-Everything here uses only scikit-learn (TF-IDF) for the retrieval math so
-it runs anywhere with no internet access needed after `pip install`. See
-architecture_design.md for how you'd swap in dense embeddings (e.g.
-sentence-transformers, OpenAI, Voyage) + a proper vector database
-(FAISS/Pinecone/Weaviate) for production scale.
-
-#################################################################################
-rag_pipeline.py
 ---------------
 
 RAG pipeline for The Star's Johor State Election articles.
@@ -573,6 +537,8 @@ OTHER_STATES = [
     "kelantan",
     "terengganu",
     "pahang",
+    "labuan",
+    "kuala lumpur",
     "negeri sembilan",
     "melaka",
     "perlis",
@@ -590,7 +556,14 @@ OUT_OF_SCOPE_KEYWORDS = [
     "share prices",
     "weather",
     "forecast",
+    "food",
     "football",
+    "world cup",
+    "fifa",
+    "actress",
+    "actor",
+    "songs",
+    "song",
     "soccer",
     "sports",
     "recipe",
@@ -987,6 +960,23 @@ def answer_question(
     """
 
     # ------------------------------------------------------------
+    # Simple / greeting conversation
+    # ------------------------------------------------------------
+
+    conversational_response = handle_simple_conversation(
+        query
+    )
+
+    if conversational_response:
+
+        return RAGResponse(
+            query=query,
+            in_scope=False,
+            answer=conversational_response
+        )
+
+
+    # ------------------------------------------------------------
     # Guardrail
     # ------------------------------------------------------------
 
@@ -1355,6 +1345,79 @@ def load_articles(
 
     return articles
 
+# ============================================================================
+# SIMPLE / GREETING CONVERSATION HANDLER
+# ============================================================================
+
+def handle_simple_conversation(
+    query: str
+) -> str | None:
+    """
+    Handle simple greetings and conversational messages
+    before sending the question through the RAG guardrail.
+
+    Returns:
+        A friendly response if the message is conversational.
+        None if the message should continue to the RAG pipeline.
+    """
+
+    normalized_query = re.sub(
+        r"\s+",
+        " ",
+        query.strip().lower()
+    )
+
+    # Simple greetings
+    greetings = {
+        "hi",
+        "hello",
+        "hey",
+        "hi there",
+        "hello there",
+        "hey there",
+        "olla"
+    }
+
+    if normalized_query in greetings:
+
+        return (
+            "👋 Hello! You can ask me questions about "
+            "The Star's coverage of the Johor state election."
+        )
+
+    # Simple help requests
+    help_requests = {
+        "can you help me",
+        "can you help me?",
+        "help me",
+        "help",
+        "help me please",
+        "can you help",
+        "can you help?"
+    }
+
+    if normalized_query in help_requests:
+
+        return (
+            "Sure! 😊 Ask me a question about The Star's "
+            "coverage of the Johor state election."
+        )
+
+    # Simple test messages
+    test_messages = {
+        "test",
+        "testing",
+        "test test"
+    }
+
+    if normalized_query in test_messages:
+
+        return (
+            "👋 I'm ready! Try asking me a question about "
+            "The Johor state election."
+        )
+
+    return None
 
 # ============================================================================
 # MAIN
