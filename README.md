@@ -1,4 +1,4 @@
-# Johor Election RAG Chatbot — Section B Prototype
+# Prototype Johor Election RAG Chatbot
 
 A Retrieval-Augmented Generation (RAG) prototype that allows users to ask
 questions about **The Star's coverage of the Johor state election** and
